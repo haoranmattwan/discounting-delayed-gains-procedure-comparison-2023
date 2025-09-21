@@ -1,0 +1,260 @@
+---
+title: "Individual Differences in Degree of Discounting"
+subtitle: "Computational Appendix for Wan, Myerson, & Green (2023)"
+author: "Haoran (Matt) Wan"
+date: "today"
+format: 
+  html:
+    toc: true
+    code-fold: true
+    self-contained: true
+engine: knitr
+---
+
+## Introduction
+
+This document contains the R code to replicate the primary analyses from the publication:
+
+> Wan, H., Myerson, J., & Green, L. (2023). Individual differences in degree of discounting: Do different procedures and measures assess the same construct?. *Behavioural Processes*, *208*, 104864. https://doi.org/10.1016/j.beproc.2023.104864
+
+The analyses compare two methods for measuring delay discounting—the Adjusting-Amount (Adj-Amt) procedure and the Monetary Choice Questionnaire (MCQ) using a variety of statistical techniques, including nonlinear regression, beta regression, correlation, and ANOVA.
+
+The data can be requested from me or from my coauthors, Leonard Green and Joel Myerson.
+
+## 1. Setup: Load Packages and Process Data
+
+This chunk loads all necessary R packages and then performs the data processing steps, including calculating the theoretical (`log k`) and atheoretical (Area under the Curve / choice proportion) discounting measures for each individual.
+
+```{r setup_and_process}
+#| message: false
+#| warning: false
+
+# --- Load Packages ---
+library(minpack.lm)
+library(glmmTMB)
+library(multcomp)
+library(emmeans)
+library(psych)
+library(readr)
+library(dplyr)
+library(tidyr)
+
+# --- Load and Process Data (from Data.R) ---
+disc_df <- read_csv("R Code/data/AdjAmt_MCQ.csv") |> select(-1)
+
+# --- Group-Level Data Frame for Plotting/Group Fits ---
+disc_grp_df <- disc_df |>
+  group_by(provider, procedure, amt, iv) |>
+  mutate(iv = ifelse(procedure == "mcq", log(iv), iv)) |>
+  summarise(mean_sv = mean(value), med_sv = median(value), .groups = 'drop') |>
+  arrange(procedure, provider)
+
+# --- Individual-Level Data Frame ---
+# Function to calculate Area under the Curve
+auc <- function(x, y) {
+  sum(diff(x) * (y[-1] + y[-length(y)])) / 2
+}
+
+# Process Adj-Amt Data
+adj_amt_processed <- disc_df |>
+  filter(procedure == "aa" & iv != 730) |>
+  group_by(id, procedure, amt) |>
+  summarise(
+    atheoretical = auc(iv / 180, value),
+    theoretical = tryCatch({
+      coef(nlsLM(log(value) ~ -log(1 + exp(k) * iv), start = list(k = -4), 
+                  control = nls.lm.control(maxiter = 1024)))[['k']]
+    }, error = function(e) NA),
+    .groups = 'drop'
+  ) |>
+  select(id, procedure, amt, atheoretical, theoretical)
+
+# Process MCQ Data
+# Using the original, more robust logic from Data.R to calculate theoretical log k
+mcq_processed <- disc_df |>
+  filter(procedure == "mcq") |>
+  group_by(id, amt) |>
+  summarise(
+    # atheoretical measure is the sum of choices (0 or 1), which is correct.
+    atheoretical = sum(value),
+    # theoretical measure requires finding the indifference point (crossover)
+    theoretical = {
+      # Local variables for clarity within the summarise call
+      choices <- value
+      k_values <- iv
+      # Handle edge cases first for participants who never switch 
+      if (all(choices == 1)) {
+        # If all choices are for the delayed option, use the smallest k
+        log(0.00016)
+      } else if (all(choices == 0)) {
+        # If all choices are for the immediate option, use the largest k
+        log(0.25)
+      } else {
+        # For participants who switch, calculate consistency for each k
+        n_consistent <- sapply(k_values, function(k_level) {
+          sum((choices == 0 & k_values <= k_level) | (choices == 1 & k_values >= k_level))
+        })
+        # Find ALL k-values that maximize the number of consistent choices
+        indifference_ks <- k_values[which(n_consistent == max(n_consistent))]
+        # The estimated indifference point is the geometric mean of these k's
+        log(geometric.mean(indifference_ks))
+      }
+    },
+    .groups = 'drop'
+  ) |>
+  # Add the procedure column back for merging
+  mutate(procedure = "mcq") |>
+  # Ensure only one row per participant/amount combination
+  distinct(id, amt, .keep_all = TRUE)
+
+# Combine into final analysis dataframe
+behav <- bind_rows(adj_amt_processed, mcq_processed) |>
+    left_join(distinct(select(disc_df, id, provider)), by = "id")
+```
+
+> **Note:** The `log k` values (the `theoretical` measure) in this script are calculated using a direct scoring algorithm (for the MCQ) and nonlinear least-squares (`nlsLM` in R) for consistency within this computational environment. The values reported in the published article were estimated using Bayesian methods in Stan, which may result in minor numerical differences.
+
+---
+
+## 2. Results
+
+The following analyses are structured to match the Results section of the published article.
+
+### 2.1 Group-Level Analyses & Amount Effects
+
+This section replicates the group-level model fits and tests for the magnitude effect, where the degree of delay discounting decreases as the reward amount increases.
+
+```{r group_analysis}
+#| warning: false
+
+# --- Adjusting-Amount Procedure ---
+cat("--- Adj-Amt: Group-level Hyperboloid Model Fit (R-squared) ---\n")
+r2_aa_grp <- matrix(NA, nrow = 3, ncol = 2) |>
+  `colnames<-`(c("Prolific", "MTurk")) |>
+  `rownames<-`(c("$30", "$80", "$500"))
+
+for (a in 1:3) {
+  for (p in c("Prolific", "MTurk")) {
+    data_subset <- subset(disc_grp_df, amt == a & procedure == "aa" & provider == p)
+    fit <- nlsLM(med_sv ~ 1 / (1 + exp(k) * iv)^b, data = data_subset, 
+                 start = list(k = -4, b = 1), control = list(maxiter = 1000))
+    rss <- sum(residuals(fit)^2)
+    tss <- sum((data_subset$med_sv - mean(data_subset$med_sv))^2)
+    r2_aa_grp[a, p] <- 1 - (rss / tss)
+  }
+}
+print(r2_aa_grp, digits = 3)
+
+cat("\n--- Adj-Amt: Amount Effect (Beta Regression p-values) ---\n")
+behav |> filter(procedure == "aa") |>
+  group_by(provider) |>
+  summarise(
+    p_value = summary(glht(
+      glmmTMB(atheoretical ~ as.factor(amt) + (1 | id), family = beta_family(), data = cur_data()),
+      linfct = matrix(c(-1, 0, 1), nrow = 1)
+    ))$test$pvalues[1],
+    .groups = 'drop'
+  )
+
+# --- MCQ Procedure ---
+cat("\n--- MCQ: Group-level Logistic Growth Model Fit (R-squared) ---\n")
+r2_mcq_grp <- matrix(NA, nrow = 3, ncol = 2) |>
+  `colnames<-`(c("Prolific", "MTurk")) |>
+  `rownames<-`(c("$30", "$55", "$80"))
+
+for (a in 1:3) {
+  for (p in c("Prolific", "MTurk")) {
+    data_subset <- subset(disc_grp_df, amt == a & procedure == "mcq" & provider == p)
+    fit <- nlsLM(mean_sv ~ 1 / (1 + exp(-(iv - x) * r)), data = data_subset, 
+                 start = list(x = -4, r = 1), control = list(maxiter = 1000))
+    rss <- sum(residuals(fit)^2)
+    tss <- sum((data_subset$mean_sv - mean(data_subset$mean_sv))^2)
+    r2_mcq_grp[a, p] <- 1 - (rss / tss)
+  }
+}
+print(r2_mcq_grp, digits = 3)
+
+cat("\n--- MCQ: Amount Effect (Logistic Regression p-values) ---\n")
+behav |> filter(procedure == "mcq") |>
+  group_by(provider) |>
+  summarise(
+    p_value = summary(glht(
+      glmmTMB(cbind(atheoretical, 9 - atheoretical) ~ as.factor(amt) + (1 | id), family = binomial, data = cur_data()),
+      linfct = matrix(c(contr.poly(3)[,1]), nrow = 1)
+    ))$test$pvalues[1],
+    .groups = 'drop'
+  )
+```
+
+---
+
+### 2.2 Reliability: Within-Procedure Correlations
+
+These analyses evaluate the reliability of the discounting measures by examining the correlations between different reward amounts within each procedure. The results correspond to **Tables 1 and 2** in the paper.
+
+```{r reliability_analysis}
+# --- Correlation within each discounting measure ---
+cat("--- Within-Procedure, Within-Measure Correlations ---\n")
+behav |>
+  pivot_longer(names_to = "measure", values_to = "value", cols = c(atheoretical, theoretical)) |>
+  pivot_wider(names_from = amt, values_from = value) |>
+  group_by(measure, procedure, provider) |>
+  summarise(
+    cor_1_2 = cor(`1`, `2`, use = "complete.obs"),
+    cor_1_3 = cor(`1`, `3`, use = "complete.obs"),
+    cor_2_3 = cor(`2`, `3`, use = "complete.obs"),
+    .groups = 'drop'
+  ) |> print(n=20)
+
+# --- Correlation between discounting measures (theoretical and atheoretical) ---
+cat("\n--- Within-Procedure, Between-Measure Correlations ---\n")
+behav |>
+  group_by(provider, procedure, amt) |>
+  summarise(correlation = cor(atheoretical, theoretical, use = "complete.obs"), .groups = 'drop') |>
+  pivot_wider(names_from = amt, values_from = correlation, names_prefix = "amt_")
+```
+
+---
+
+### 2.3 Construct Validity: Between-Procedure Correlations
+
+This analysis addresses the primary research question by correlating the measures from the Adj-Amt procedure with those from the MCQ. This corresponds to **Table 3** in the paper.
+
+```{r validity_analysis}
+cat("--- Between-Procedure Correlations (Construct Validity) ---\n")
+behav |>
+  filter((procedure == "aa" & amt != 3) | (procedure == "mcq" & amt != 2)) |>
+  mutate(amt = ifelse(amt == 1, "$30", "$80")) |>
+  pivot_wider(names_from = procedure, values_from = c(atheoretical, theoretical)) |>
+  group_by(provider, amt) |> 
+  summarise(
+    cor_atheoretical = cor(atheoretical_aa, atheoretical_mcq, use = "complete.obs"),
+    cor_theoretical = cor(theoretical_aa, theoretical_mcq, use = "complete.obs"),
+    .groups = 'drop'
+  )
+```
+
+---
+
+### 2.4 Comparing Degrees of Discounting
+
+An ANOVA was conducted to compare the absolute `log k` values between procedures, samples (Prolific vs. MTurk), and reward amounts.
+
+```{r anova_analysis}
+cat("--- ANOVA: Comparing log k Across Procedures, Samples, and Amounts ---\n")
+# Prepare data for ANOVA
+anova_data <- filter(behav, (procedure == "aa" & amt != 3) | (procedure == "mcq" & amt != 2)) |>
+  mutate(
+    amt = factor(ifelse(amt == 1, "$30", "$80")),
+    procedure = factor(procedure),
+    provider = factor(provider)
+  )
+
+# Fit and print ANOVA summary
+logk_mod <- aov(theoretical ~ provider * amt * procedure, data = anova_data)
+print(summary(logk_mod))
+
+cat("\n--- Post-Hoc Contrasts for Procedure x Amount Interaction ---\n")
+emm_obj <- emmeans(logk_mod, ~ amt | procedure)
+print(pairs(emm_obj, adjust = "holm"))
+```

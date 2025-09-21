@@ -1,6 +1,5 @@
 ---
 title: "Individual Differences in Degree of Discounting"
-subtitle: "Computational Appendix for Wan, Myerson, & Green (2023)"
 author: "Haoran (Matt) Wan"
 date: "today"
 format: 

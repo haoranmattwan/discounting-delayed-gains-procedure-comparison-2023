@@ -1,60 +1,59 @@
-# Individual Differences in Degree of Discounting: A Comparison of Two Procedures
+# Psychometric Validation of Behavioral Measurement Tools
+### A Reproducible Analysis of Wan et al. (2023), *Behavioural Processes*
 
-This repository contains the analysis scripts and presentation materials for the peer-reviewed publication:
+This repository contains the complete analysis scripts and materials for the peer-reviewed publication:
 
 > Wan, H., Myerson, J., & Green, L. (2023). Individual differences in degree of discounting: Do different procedures and measures assess the same construct?. *Behavioural Processes*, *208*, 104864. https://doi.org/10.1016/j.beproc.2023.104864
 
----
-
-## Project Overview
-
-This study provides a comprehensive comparison of the two most prominent procedures for measuring delay discounting: the Adjusting-Amount (Adj-Amt) procedure and the Monetary Choice Questionnaire (MCQ). The primary goal was to determine whether both procedures reliably measure the same underlying psychological construct.
-
-The analysis involves a multi-step workflow, starting with complex data processing to derive theoretical (e.g., `log k`) and atheoretical (e.g., Area under the Curve) measures of discounting for each participant. Subsequently, a diverse range of statistical methods, including nonlinear regression, generalized linear mixed models (beta and binomial), correlation analyses, and ANOVA, were employed to test the reliability and validity of the procedures.
-
-The data can be requested from me or from my coauthors, Cyrus Kirkman and Tim Hackenberg.
-
-## Repository Structure
-
-The project materials are organized into the following folders:
-
-* **/Analysis**: Contains the primary analysis scripts that replicate the findings in the paper.
-    * `analysis.qmd`: A Quarto document with the complete **R** code for the entire workflow. It demonstrates data processing, model fitting (`minpack.lm`, `glmmTMB`), and statistical testing.
-    * `analysis.ipynb`: A Jupyter Notebook providing a direct **Python** translation of the R analysis, using `pandas` for data manipulation and `lmfit` and `statsmodels` for statistical modeling and inference.
-
-* **/Presentation**: Contains a slide deck or poster used to present the findings of this research at an academic conference.
-
-* **`/Figure`**: Contains the figures as they appear in the final publication.
+**Note on Data:** The data for this study can be requested from me or from my coauthors, Leonard Green and Joel Myerson. 
 
 ---
 
-## Methodology Snapshot
+## Project Objective
 
-This project showcases a versatile approach to data analysis, including:
+The goal of this project is to conduct a comprehensive psychometric comparison of the two most prominent procedures for measuring delay discounting: the **Adjusting-Amount (Adj-Amt)** procedure and the **Monetary Choice Questionnaire (MCQ)**. The primary objective is to determine whether both procedures reliably measure the same underlying psychological construct by assessing their reliability and convergent validity.
 
-* **Complex Data Processing**: Custom R and Python functions to score participant-level data from raw experimental outputs, including calculating Area under the Curve and scoring the MCQ to estimate indifference points.
-* **Nonlinear Modeling**: Fitting hyperboloid and logistic growth functions to group-level data.
-* **Generalized Linear Models**: Using beta and binomial GLMs to test for the "amount effect" while accounting for the non-normal distribution of the dependent variables.
-* **Inferential Statistics**: Comprehensive correlation analyses to establish within-procedure reliability and between-procedure validity, supplemented with ANOVA to compare absolute differences in discounting rates.
+This analysis demonstrates a complete workflow, from processing raw experimental data into theoretical and atheoretical measures to applying a range of statistical models to evaluate the psychometric properties of the measurement tools.
+
+## Repository Contents
+
+| File / Folder | Description |
+| :--- | :--- |
+| **`/Analysis/`** | Contains the primary scripts that replicate all findings in the paper. |
+| `analysis.qmd` | A Quarto document with the complete **R** workflow, using `glmmTMB` and `minpack.lm`. |
+| `analysis.ipynb` | A Jupyter Notebook providing a **Python** translation of the analysis, using `statsmodels` and `lmfit`. |
+| **`/Presentation/`** | A slide deck used to present the research findings at an academic conference. |
+| **`/Figure/`** | All figures as they appear in the final publication. |
 
 ---
 
-## Software and Execution
+## Methodological Approach
 
-To run the analyses, you will need the appropriate software environment and the raw data file.
+This project showcases a comprehensive approach to psychometric validation, highlighting the following skills:
+
+* **Complex Data Processing**: Implemented custom functions to score raw experimental data, including calculating Area under the Curve (atheoretical) and using a consistency-checking algorithm to estimate indifference points (`log k`) from choice data (theoretical).
+* **Nonlinear Modeling**: Fit theoretical functions (hyperboloid and logistic growth) to aggregated group-level data to perform initial data validation checks.
+* **Generalized Linear Mixed-Effects Models**: Used beta and binomial GLMMs to test for benchmark experimental effects while correctly modeling the non-normal, bounded nature of the outcome variables.
+* **Psychometric Analysis**: Conducted a full suite of correlation analyses to establish **alternate-forms reliability** (within-procedure) and **convergent validity** (between-procedure), supplemented with a mixed-effects ANOVA to compare absolute differences in the measures.
+
+---
+
+## How to Reproduce This Analysis
+
+To run these analyses, you will need the raw data file and the appropriate software environment as described below.
 
 ### R Environment (`/Analysis/analysis.qmd`)
 
-* **Required Packages**: `readr`, `dplyr`, `tidyr`, `minpack.lm`, `glmmTMB`, `multcomp`, `emmeans`, `psych`.
+* **Required Packages**: `readr`, `dplyr`, `tidyr`, `minpack.lm`, `glmmTMB`, `emmeans`, `psych`.
 * **Installation**:
     ```R
-    install.packages(c("readr", "dplyr", "tidyr", "minpack.lm", "glmmTMB", "multcomp", "emmeans", "psych"))
+    install.packages(c("readr", "dplyr", "tidyr", "minpack.lm", "glmmTMB", "emmeans", "psych"))
     ```
 
 ### Python Environment (`/Analysis/analysis.ipynb`)
 
-* **Required Packages**: `pandas`, `numpy`, `scipy`, `lmfit`, `statsmodels`.
+* **Required Packages**: `pandas`, `numpy`, `scipy`, `lmfit`, `statsmodels`, `openpyxl`.
 * **Installation**:
     ```bash
-    pip install pandas numpy scipy lmfit statsmodels
+    pip install pandas numpy scipy lmfit statsmodels openpyxl
     ```

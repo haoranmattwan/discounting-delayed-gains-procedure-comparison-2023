@@ -99,13 +99,11 @@ mcq_summary <- raw_data |>
       k_values <- iv
       
       if (all(choices == 1)) {
-        # Edge case: If always patient, assign the smallest possible k
         log(0.00016)
       } else if (all(choices == 0)) {
-        # Edge case: If always impatient, assign the largest possible k
         log(0.25)
       } else {
-        # Standard case: Find the k value where the participant switches preference
+        # Find the k value where the participant switches preference
         n_consistent <- sapply(k_values, function(k_level) {
           sum((choices == 0 & k_values <= k_level) | (choices == 1 & k_values > k_level))
         })
@@ -388,7 +386,6 @@ logk_mixed_model <- lmer(theoretical ~ provider * amt * procedure + (1 | id), da
 # Print the ANOVA table with Type III sums of squares
 cat("--- Mixed-Effects ANOVA: Comparing log k Values ---\n")
 print(anova(logk_mixed_model))
-
 
 # --- 3.2 Post-Hoc Contrasts ---
 

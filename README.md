@@ -29,12 +29,12 @@ This analysis demonstrates a complete workflow, from processing raw experimental
 
 ## Methodological Approach
 
-This project showcases a comprehensive approach to psychometric validation, highlighting the following skills:
+The analysis employs a multi-step psychometric validation workflow to compare the two measurement procedures:
 
-* **Complex Data Processing**: Implemented custom functions to score raw experimental data, including calculating Area under the Curve (atheoretical) and using a consistency-checking algorithm to estimate indifference points (`log k`) from choice data (theoretical).
-* **Nonlinear Modeling**: Fit theoretical functions (hyperboloid and logistic growth) to aggregated group-level data to perform initial data validation checks.
-* **Generalized Linear Mixed-Effects Models**: Used beta and binomial GLMMs to test for benchmark experimental effects while correctly modeling the non-normal, bounded nature of the outcome variables.
-* **Psychometric Analysis**: Conducted a full suite of correlation analyses to establish **alternate-forms reliability** (within-procedure) and **convergent validity** (between-procedure), supplemented with a mixed-effects ANOVA to compare absolute differences in the measures.
+* **Data Processing**: Custom functions were implemented to score raw experimental data from both procedures. This included calculating an atheoretical measure (Area under the Curve or choice proportion) and a theoretical measure (`log k`), which was estimated using a consistency-checking algorithm for the choice-based data.
+* **Data Validation**: As an initial quality check, theoretical functions (hyperboloid and logistic growth) were fit to aggregated group-level data to confirm that the behavioral data followed established patterns.
+* **Mixed-Effects Modeling**: Beta and binomial generalized linear mixed-effects models (GLMMs) were used to test for benchmark experimental effects (e.g., the "amount effect") while correctly accounting for the non-normal, bounded nature of the outcome variables and the repeated-measures data structure.
+* **Reliability and Validity Analysis**: A comprehensive suite of correlation analyses was conducted to establish **alternate-forms reliability** (within-procedure) and **convergent validity** (between-procedure). Finally, a mixed-effects ANOVA was used to compare the absolute differences in the measures produced by each procedure.
 
 ---
 

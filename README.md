@@ -5,7 +5,7 @@ This repository contains the complete analysis scripts and materials for the pee
 
 > Wan, H., Myerson, J., & Green, L. (2023). Individual differences in degree of discounting: Do different procedures and measures assess the same construct?. *Behavioural Processes*, *208*, 104864. https://doi.org/10.1016/j.beproc.2023.104864
 
-**Note on Data:** The data for this study can be requested from me or from my coauthors, Leonard Green and Joel Myerson. 
+**Note on Data:** The data for this study can be requested from me or from my coauthors, Drs. Leonard Green and Joel Myerson. 
 
 ---
 
@@ -22,7 +22,7 @@ This analysis demonstrates a complete workflow, from processing raw experimental
 | **`/Analysis/`** | Contains the primary scripts that replicate all findings in the paper. |
 | `analysis.qmd` | A Quarto document with the complete **R** workflow, using `glmmTMB` and `minpack.lm`. |
 | `analysis.ipynb` | A Jupyter Notebook providing a **Python** translation of the analysis, using `statsmodels` and `lmfit`. |
-| **`/Presentation/`** | A slide deck used to present the research findings at an academic conference. |
+| **`/Presentation/`** | Contain slides and a poster that were presented at meetings and SQAB. |
 | **`/Figure/`** | All figures as they appear in the final publication. |
 
 ---

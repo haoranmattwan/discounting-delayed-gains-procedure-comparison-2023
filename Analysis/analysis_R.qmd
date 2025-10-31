@@ -46,13 +46,17 @@ The analysis is organized into the following sections:
 
 # --- 1.1 Load R Packages ---
 library(minpack.lm) # For robust non-linear least squares regression (nlsLM)
-library(glmmTMB)    # For mixed-effects modeling (used in ANOVA)
 library(emmeans)    # For post-hoc tests
 library(psych)      # For psychological research tools (e.g., geometric.mean)
 library(readr)      # For fast CSV file reading
 library(tidyr)      # For tidying data
 library(multcomp)   # For linear contrast
 library(dplyr)      # For data manipulation and wrangling
+
+# For mixed-effects modeling (used in ANOVA)
+library(glmmTMB)    
+library(lme4)   
+library(lmerTest)   
 
 # --- 1.2 Load Raw Data ---
 raw_data <- read_csv("AdjAmt_MCQ.csv") |> select(-1)
@@ -126,7 +130,7 @@ individual_level_data <- bind_rows(adj_amt_summary, mcq_summary) |>
 
 ::: {.callout-note}
 ## Note on `log k` Estimation
-The theoretical discounting parameter (`log k`) is estimated in this script using nonlinear least-squares (`nlsLM`) for the Adjusting-Amount data and a direct scoring algorithm for the MCQ. These methods are computationally efficient for this environment. The values in the original publication were derived from a fully Bayesian analysis, which may lead to minor numerical differences in the point estimates. This does not alter the study's conclusions regarding the high correlation between measures.
+The theoretical discounting parameter (`log k`) is estimated in this script using nonlinear least-squares (`nlsLM`) for the Adjusting-Amount data and a direct scoring algorithm for the MCQ. These methods are computationally efficient for this environment. The values in the original publication were derived using Stan, which may lead to minor numerical differences in the point estimates. This does not alter the study's conclusions regarding the high correlation between measures.
 :::
 
 ---
@@ -137,7 +141,7 @@ This section replicates the initial analyses from the paper that establish the q
 
 ### 2.1 Group-Level Model Fits & The Amount Effect
 
-First, we assess how well established mathematical models of choice describe the aggregated data from each group. High $R^2$ values indicate that participants' choices were systematic and not random.
+First, we assess how well established mathematical models of choice describe the aggregated data from each group. High $R^2$ values indicate that participants' choices were systematic.
 
 Second, we test for the **"amount effect,"** a benchmark finding in discounting research where delayed rewards are discounted less steeply as their amount increases. Confirming this effect serves as a critical validity check for the dataset.
 
@@ -172,7 +176,6 @@ r2_adj_amt <- group_level_summary |>
 
 print(as.data.frame(r2_adj_amt), digits = 3)
 
-
 # Test for the amount effect using a beta mixed-effects regression
 cat("\n--- Adj-Amt: Amount Effect (Beta Regression p-values) ---\n")
 adj_amt_amount_effect <- individual_level_data |>
@@ -188,7 +191,6 @@ adj_amt_amount_effect <- individual_level_data |>
   )
 
 print(adj_amt_amount_effect)
-
 
 # --- 2.1.2 Monetary Choice Questionnaire (MCQ): Data Quality ---
 
@@ -207,7 +209,6 @@ r2_mcq <- group_level_summary |>
   pivot_wider(names_from = provider, values_from = r_squared)
 
 print(as.data.frame(r2_mcq), digits = 3)
-
 
 # Test for the amount effect using a binomial mixed-effects regression
 cat("\n--- MCQ: Amount Effect (Logistic Regression p-values) ---\n")
@@ -277,7 +278,6 @@ mcq_reliability <- individual_level_data |>
 print(mcq_reliability$ChoiceCount, digits = 3)
 print(mcq_reliability$LogK, digits = 3)
 
-
 # --- 2.2.2 Convergent Validity of Measures (Between-Measure) ---
 
 # This analysis tests if the atheoretical and theoretical scoring methods are highly
@@ -336,7 +336,6 @@ atheoretical_correlations <- wide_format_for_correlation |>
 
 print(atheoretical_correlations)
 
-
 cat("\n--- Between-Procedure Correlations (Theoretical Measures) ---\n")
 theoretical_correlations <- wide_format_for_correlation |>
   group_by(provider, amount_label) |> 
@@ -365,10 +364,6 @@ To answer this, we replicate the final analysis from the paper, a mixed-effects 
 # the paper. A mixed-effects model is appropriate because each participant
 # provides multiple data points (i.e., repeated measures). This model accounts
 # for that non-independence by including a random intercept for each participant.
-
-# Note: The lme4 and lmerTest packages are required for this analysis.
-library(lme4)
-library(lmerTest)
 
 # Prepare the data for the model, filtering for the common reward amounts
 anova_df <- individual_level_data |>

@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "Please cite the peer-reviewed article below when using this repository."
+title: "Analysis companion: Comparing delay-discounting procedures"
+type: software
+authors:
+  - family-names: Wan
+    given-names: Haoran
+repository-code: "https://github.com/haoranmattwan/discounting-delayed-gains-procedure-comparison-2023"
+license: MIT
+preferred-citation:
+  type: article
+  title: "Individual differences in degree of discounting: Do different procedures and measures assess the same construct?"
+  authors:
+    - family-names: Wan
+      given-names: Haoran
+    - family-names: Myerson
+      given-names: Joel
+    - family-names: Green
+      given-names: Leonard
+  doi: "10.1016/j.beproc.2023.104864"
+  journal: "Behavioural Processes"
+  volume: 208
+  year: 2023
+  start: "104864"

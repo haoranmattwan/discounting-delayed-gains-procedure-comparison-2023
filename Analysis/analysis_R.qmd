@@ -1,396 +1,556 @@
 ---
-title: "Psychometric Comparison of Delay Discounting Measures"
-subtitle: "Replication of Wan et al. (2023), Behavioural Processes"
-author: "Haoran (Matt) Wan"
-date: "today"
-format: 
+title: "Do the Adjusting-Amount Procedure and MCQ Measure the Same Construct?"
+subtitle: "R reproducibility companion to Wan, Myerson, and Green (2023)"
+author: "Haoran Wan"
+date: "2026-07-01"
+format:
   html:
     toc: true
-    code-fold: false
+    toc-depth: 3
+    code-fold: show
+    code-tools: true
     self-contained: true
     theme: cosmo
-    mainfont: "Garamond"
 execute:
   warning: false
   message: false
 engine: knitr
 ---
 
-## Project Objective
+## Executive summary
 
-This document provides the complete R code to replicate the analyses from the publication:
+This report examines whether two widely used measures of delay discounting - the **Adjusting-Amount procedure (Adj-Amt)** and the **Monetary Choice Questionnaire (MCQ)** - capture the same individual-difference construct.
 
-> Wan, H., Myerson, J., & Green, L. (2023). Individual differences in degree of discounting: Do different procedures and measures assess the same construct?. *Behavioural Processes*, *208*, 104864. https://doi.org/10.1016/j.beproc.2023.104864
+The published study analyzed 393 adults recruited through Prolific (*n* = 150) and Amazon Mechanical Turk (MTurk; *n* = 243 after attention-check exclusions). Three findings are central:
 
-The central research question is methodological: do the two most prominent procedures for measuring delay discounting—the **Adjusting-Amount (Adj-Amt)** procedure and the **Monetary Choice Questionnaire (MCQ)**—actually measure the same underlying construct?
+1. **Both procedures produced the expected magnitude effect.** Larger delayed rewards were discounted less steeply in both samples and with both procedures (all published *p*s < .001).
+2. **Individual differences were reliable and convergent.** Published between-procedure correlations ranged from .741 to .821 across samples, reward amounts, and scoring approaches.
+3. **Convergence does not imply interchangeability.** At $30, the MCQ produced steeper discounting than Adj-Amt (*p* = .003); at $80, the procedures did not differ (*p* = .95).
 
-This analysis tests the convergent validity of these two measures using data from two large online samples (Prolific and MTurk). The findings are crucial for determining whether results from studies using different procedures can be validly compared.
+::: {.callout-important}
+## Scientific conclusion
 
-
-## Analysis Workflow
-
-The analysis is organized into the following sections:
-
-1.  **Setup & Data Processing**: Loads all R packages, imports the raw data, and processes it into analysis-ready formats. This includes calculating both theoretical (`log k`) and atheoretical (Area under the Curve / choice proportion) discounting measures for each individual.
-2.  **Data Quality & Reliability**: Replicates the initial analyses from the paper that establish the quality and internal consistency of the data from both procedures and participant samples.
-3.  **Convergent Validity (Correlation Analysis)**: Replicates the core correlational analyses (Table 3) to test the primary hypothesis that measures from the Adj-Amt and MCQ procedures are highly correlated.
-4.  **Procedural & Sample Differences (ANOVA)**: Replicates the mixed-effects ANOVA used to test for systematic differences in measured discounting rates between the two procedures and the two online samples.
-
-```{r setup_and_process}
-# --- 1. SETUP: LOAD PACKAGES AND PROCESS DATA ---
-
-# This section prepares the R environment, loads the raw dataset, and transforms
-# it into an analysis-ready format. This includes calculating the two primary
-# outcome measures for each participant: an atheoretical measure (AuC or choice
-# count) and a theoretical measure (log k).
-
-# --- 1.1 Load R Packages ---
-library(minpack.lm) # For robust non-linear least squares regression (nlsLM)
-library(emmeans)    # For post-hoc tests
-library(psych)      # For psychological research tools (e.g., geometric.mean)
-library(readr)      # For fast CSV file reading
-library(tidyr)      # For tidying data
-library(multcomp)   # For linear contrast
-library(dplyr)      # For data manipulation and wrangling
-
-# For mixed-effects modeling (used in ANOVA)
-library(glmmTMB)    
-library(lme4)   
-library(lmerTest)   
-
-# --- 1.2 Load Raw Data ---
-raw_data <- read_csv("AdjAmt_MCQ.csv") |> select(-1)
-
-# --- 1.3 Calculate Individual-Level Discounting Measures ---
-
-#' @title Calculate Area Under the Curve
-#' @description Calculates area under a curve using the trapezoidal rule.
-#' @param x A numeric vector of x-coordinates (e.g., normalized delays).
-#' @param y A numeric vector of y-coordinates (e.g., subjective values).
-#' @return A single numeric value representing the area.
-calculate_auc <- function(x, y) {
-  sum(diff(x) * (y[-1] + y[-length(y)])) / 2
-}
-
-# Process the Adjusting-Amount (Adj-Amt) data
-adj_amt_summary <- raw_data |>
-  filter(procedure == "aa" & iv != 730) |>
-  group_by(id, procedure, amt) |>
-  summarise(
-    # Atheoretical measure: Area under the Curve (AuC)
-    atheoretical = calculate_auc(iv / 180, value),
-    # Theoretical measure: log(k) from a simple hyperbola
-    theoretical = tryCatch({
-      # Fit a non-linear model to estimate the k parameter for each individual
-      fit <- nlsLM(log(value) ~ -log(1 + exp(k) * iv), start = list(k = -4))
-      coef(fit)[['k']]
-    }, error = function(e) NA), # Return NA if the model fails to converge
-    .groups = 'drop'
-  )
-
-# Process the Monetary Choice Questionnaire (MCQ) data
-mcq_summary <- raw_data |>
-  filter(procedure == "mcq") |>
-  group_by(id, amt) |>
-  summarise(
-    # Atheoretical measure: Total number of delayed choices
-    atheoretical = sum(value),
-    # Theoretical measure: log(k) estimated from the choice pattern
-    theoretical = {
-      # This block uses the standard scoring algorithm for the MCQ to find
-      # the k value that makes the participant's choices most consistent.
-      choices <- value
-      k_values <- iv
-      
-      if (all(choices == 1)) {
-        log(0.00016)
-      } else if (all(choices == 0)) {
-        log(0.25)
-      } else {
-        # Find the k value where the participant switches preference
-        n_consistent <- sapply(k_values, function(k_level) {
-          sum((choices == 0 & k_values <= k_level) | (choices == 1 & k_values > k_level))
-        })
-        # The indifference point is the geometric mean of all k-values
-        # that maximize choice consistency.
-        indifference_ks <- k_values[which(n_consistent == max(n_consistent))]
-        log(geometric.mean(indifference_ks))
-      }
-    },
-    .groups = 'drop'
-  ) |>
-  mutate(procedure = "mcq") |>
-  distinct(id, amt, .keep_all = TRUE)
-
-# --- 1.4 Combine into Final Analysis DataFrame ---
-# Bind the processed data from both procedures and add participant info
-individual_level_data <- bind_rows(adj_amt_summary, mcq_summary) |>
-  left_join(distinct(select(raw_data, id, provider)), by = "id")
-```
-
-::: {.callout-note}
-## Note on `log k` Estimation
-The theoretical discounting parameter (`log k`) is estimated in this script using nonlinear least-squares (`nlsLM`) for the Adjusting-Amount data and a direct scoring algorithm for the MCQ. These methods are computationally efficient for this environment. The values in the original publication were derived using Stan, which may lead to minor numerical differences in the point estimates. This does not alter the study's conclusions regarding the high correlation between measures.
+Adj-Amt and MCQ scores capture substantial common variance and are consistent with a shared underlying construct. Their `log k` estimates should not, however, be treated as numerically interchangeable without considering reward amount, procedure, and recruitment source.
 :::
 
----
+## Published study
 
-## 2. Data Quality and Reliability Analysis
+> Wan, H., Myerson, J., & Green, L. (2023). Individual differences in degree of discounting: Do different procedures and measures assess the same construct? *Behavioural Processes, 208*, 104864. <https://doi.org/10.1016/j.beproc.2023.104864>
 
-This section replicates the initial analyses from the paper that establish the quality and internal consistency of the data. This is a crucial step to ensure the data is valid before testing the primary hypotheses.
+### Research questions
 
-### 2.1 Group-Level Model Fits & The Amount Effect
+The article addressed four questions in sequence:
 
-First, we assess how well established mathematical models of choice describe the aggregated data from each group. High $R^2$ values indicate that participants' choices were systematic.
+1. Do both procedures reproduce the magnitude effect?
+2. Are individual differences reliable across reward amounts and scoring approaches?
+3. Do Adj-Amt and MCQ measure the same construct?
+4. Do the procedures and online samples yield the same absolute degree of discounting?
 
-Second, we test for the **"amount effect,"** a benchmark finding in discounting research where delayed rewards are discounted less steeply as their amount increases. Confirming this effect serves as a critical validity check for the dataset.
+### Design and sample
 
-```{r group_analysis}
-# --- 2.1.1 Adjusting-Amount Procedure: Data Quality ---
+| Feature | Prolific | MTurk |
+|---|---:|---:|
+| Recruited | 150 | 275 |
+| Excluded for failing at least one of seven attention checks | 0 | 32 |
+| Analyzed | 150 | 243 |
+| Mean age (SD) | 28.5 (8.5) | 34.8 (10.4) |
+| Age range | 19-72 | 20-70 |
+| Mean completion time | 10.1 min | 10.2 min |
 
-# Create a summary of the data at the group level for fitting models
-group_level_summary <- raw_data |>
+Participants completed both procedures in counterbalanced order. The Adj-Amt procedure measured subjective values for delayed rewards of $30, $80, and $500. The MCQ contained three nine-item sets with delayed amounts of $25-$35, $50-$60, and $75-$85.
+
+### Measures
+
+| Procedure | Atheoretical measure | Theoretically based measure |
+|---|---|---|
+| Adj-Amt | Area under the empirical discounting curve (AuC) | `log k` from a simple hyperbola |
+| MCQ | Proportion of larger-delayed choices | `log k` from Kirby's consistency-scoring method |
+
+Lower AuC and delayed-choice proportions indicate steeper discounting. Higher `log k` indicates steeper discounting; correlations between atheoretical measures and `log k` are therefore expected to be negative.
+
+::: {.callout-note}
+## Reproducibility boundary
+
+The archived project code indicates that the publication's Adj-Amt `log k` estimates were obtained with a Stan model that treated preference reversals probabilistically; the article describes these estimates as simple-hyperbola fits. This companion report estimates Adj-Amt `log k` by nonlinear least squares from the analysis-ready subjective values. The code therefore reproduces the analysis logic and substantive pattern, but not every published theoretical point estimate. Published statistics are shown explicitly as benchmarks and are never relabeled as newly computed results.
+:::
+
+::: {.callout-note}
+## Data availability
+
+Participant-level data are not included in this repository. The analysis-ready file is available from the study authors on request. Authorized recipients should save it as `Analysis/AdjAmt_MCQ.csv` before executing this report.
+:::
+
+## 1. Setup and data integrity
+
+```{r setup}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(minpack.lm)
+library(glmmTMB)
+library(emmeans)
+library(knitr)
+
+options(digits = 3, scipen = 4)
+
+if (!file.exists("AdjAmt_MCQ.csv")) {
+  stop(
+    paste(
+      "Participant-level data are not included in this repository.",
+      "Request the analysis-ready file from the study authors and save it as",
+      "Analysis/AdjAmt_MCQ.csv before running this report."
+    ),
+    call. = FALSE
+  )
+}
+
+raw_data <- read_csv("AdjAmt_MCQ.csv", show_col_types = FALSE) |>
+  select(-1)
+
+stopifnot(
+  nrow(raw_data) == 15720,
+  n_distinct(raw_data$id) == 393,
+  setequal(unique(raw_data$provider), c("Prolific", "MTurk")),
+  setequal(unique(raw_data$procedure), c("aa", "mcq"))
+)
+
+participant_data <- raw_data |>
+  distinct(id, provider, age, sex, edu, eth, race)
+
+sample_summary <- participant_data |>
+  group_by(provider) |>
+  summarise(
+    n = n(),
+    age_mean = mean(age, na.rm = T),
+    age_sd = sd(age, na.rm = T),
+    age_range = paste0(min(age, na.rm = T), "-", max(age, na.rm = T)),
+    male_percent = 100 * mean(sex == 0, na.rm = TRUE),
+    below_college_percent = 100 * mean(edu == 0, na.rm = TRUE),
+    hispanic_latino_percent = 100 * mean(eth == 0, na.rm = TRUE),
+    non_white_percent = 100 * mean(race == 0, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+kable(sample_summary, digits = 1, caption = "Sample characteristics in the analysis-ready dataset.")
+```
+
+When supplied by the authors, the analysis-ready file contains only participants retained for analysis. Attention-check failures must therefore be documented from the published recruitment flow rather than recomputed from this file.
+
+### Scoring functions
+
+```{r scoring-functions}
+calculate_auc <- function(delay, subjective_value) {
+  order_index <- order(delay)
+  x <- delay[order_index] / 180
+  y <- subjective_value[order_index]
+  sum(diff(x) * (y[-1] + y[-length(y)]) / 2)
+}
+
+fit_adj_logk <- function(delay, subjective_value) {
+  fit <- tryCatch(
+    nlsLM(
+      log(subjective_value) ~ -log(1 + exp(log_k) * delay),
+      start = list(log_k = -4),
+      control = nls.lm.control(maxiter = 1024)
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(fit)) NA_real_ else unname(coef(fit)[["log_k"]])
+}
+
+score_mcq_logk <- function(question_k, delayed_choice) {
+  consistency <- vapply(
+    question_k,
+    function(candidate_k) {
+      sum(
+        (delayed_choice == 0 & question_k <= candidate_k) |
+          (delayed_choice == 1 & question_k >= candidate_k)
+      )
+    },
+    numeric(1)
+  )
+  best_k <- question_k[consistency == max(consistency)]
+  log(exp(mean(log(best_k))))
+}
+```
+
+```{r participant-scores}
+adj_scores <- raw_data |>
+  filter(procedure == "aa", iv != 730) |>
+  arrange(id, amt, iv) |>
+  group_by(id, provider, amt) |>
+  summarise(
+    auc = calculate_auc(iv, value),
+    log_k_companion = fit_adj_logk(iv, value),
+    .groups = "drop"
+  )
+
+mcq_scores <- raw_data |>
+  filter(procedure == "mcq") |>
+  arrange(id, amt, iv) |>
+  group_by(id, provider, amt) |>
+  summarise(
+    delayed_choices = sum(value),
+    delayed_choice_prop = mean(value),
+    log_k_companion = score_mcq_logk(iv, value),
+    .groups = "drop"
+  )
+
+stopifnot(
+  nrow(adj_scores) == 393 * 3,
+  nrow(mcq_scores) == 393 * 3,
+  all(mcq_scores$delayed_choices %in% 0:9),
+  all(mcq_scores$delayed_choice_prop >= 0 & mcq_scores$delayed_choice_prop <= 1)
+)
+```
+
+## 2. Benchmark validity: the magnitude effect
+
+Larger delayed rewards are typically discounted less steeply than smaller delayed rewards. Reproducing this magnitude effect establishes that both procedures generated the expected behavioral pattern.
+
+### Group-level model fit
+
+```{r group-fits}
+group_summary <- raw_data |>
   group_by(provider, procedure, amt, iv) |>
-  mutate(iv = ifelse(procedure == "mcq", log(iv), iv)) |>
   summarise(
-    mean_sv = mean(value), 
-    median_sv = median(value), 
-    .groups = 'drop'
+    mean_value = mean(value),
+    median_value = median(value),
+    .groups = "drop"
   )
 
-# Calculate R-squared for group-level hyperboloid model fits
-cat("--- Adj-Amt: Group-level Hyperboloid Model Fit (R-squared) ---\n")
-r2_adj_amt <- group_level_summary |>
+adj_group_fits <- group_summary |>
   filter(procedure == "aa") |>
   group_by(provider, amt) |>
-  reframe({
-    # Fit a non-linear model to the median data for each group
-    fit <- nlsLM(median_sv ~ 1 / (1 + exp(k) * iv)^s, 
-                   start = list(k = -4, s = 1), data = cur_data())
-    # Calculate R-squared manually
-    rss <- sum(residuals(fit)^2)
-    tss <- sum((cur_data()$median_sv - mean(cur_data()$median_sv))^2)
-    tibble(r_squared = 1 - (rss / tss))
+  group_modify(~ {
+    fit <- nlsLM(
+      median_value ~ 1 / (1 + exp(log_k) * iv)^s,
+      data = .x,
+      start = list(log_k = -4, s = 1),
+      control = nls.lm.control(maxiter = 1024)
+    )
+    tibble(r_squared = 1 - sum(residuals(fit)^2) /
+      sum((.x$median_value - mean(.x$median_value))^2))
   }) |>
-  pivot_wider(names_from = provider, values_from = r_squared)
+  mutate(amount = recode(as.character(amt), `1` = "$30", `2` = "$80", `3` = "$500")) |>
+  select(provider, amount, r_squared)
 
-print(as.data.frame(r2_adj_amt), digits = 3)
-
-# Test for the amount effect using a beta mixed-effects regression
-cat("\n--- Adj-Amt: Amount Effect (Beta Regression p-values) ---\n")
-adj_amt_amount_effect <- individual_level_data |>
-  filter(procedure == "aa") |>
-  group_by(provider) |>
-  summarise(
-    # Fit a beta regression model because the outcome (AuC) is a proportion (0 to 1)
-    p_value = summary(glht(
-      glmmTMB(atheoretical ~ as.factor(amt) + (1 | id), family = beta_family(), data = cur_data()),
-      linfct = matrix(c(-1, 0, 1), nrow = 1) # Contrast to test for a linear trend across amounts
-    ))$test$pvalues[1],
-    .groups = 'drop'
-  )
-
-print(adj_amt_amount_effect)
-
-# --- 2.1.2 Monetary Choice Questionnaire (MCQ): Data Quality ---
-
-# Calculate R-squared for group-level logistic growth model fits
-cat("\n\n--- MCQ: Group-level Logistic Growth Model Fit (R-squared) ---\n")
-r2_mcq <- group_level_summary |>
+mcq_group_fits <- group_summary |>
   filter(procedure == "mcq") |>
+  mutate(log_question_k = log(iv)) |>
   group_by(provider, amt) |>
-  reframe({
-    fit <- nlsLM(mean_sv ~ 1 / (1 + exp(-(iv - x) * r)), 
-                   start = list(x = -4, r = 1), data = cur_data())
-    rss <- sum(residuals(fit)^2)
-    tss <- sum((cur_data()$mean_sv - mean(cur_data()$mean_sv))^2)
-    tibble(r_squared = 1 - (rss / tss))
+  group_modify(~ {
+    fit <- nlsLM(
+      mean_value ~ 1 / (1 + exp(-(log_question_k - intercept) * rate)),
+      data = .x,
+      start = list(intercept = -4, rate = 1),
+      control = nls.lm.control(maxiter = 1024)
+    )
+    tibble(r_squared = 1 - sum(residuals(fit)^2) /
+      sum((.x$mean_value - mean(.x$mean_value))^2))
   }) |>
-  pivot_wider(names_from = provider, values_from = r_squared)
+  mutate(amount = recode(
+    as.character(amt),
+    `1` = "$25-$35", `2` = "$50-$60", `3` = "$75-$85"
+  )) |>
+  select(provider, amount, r_squared)
 
-print(as.data.frame(r2_mcq), digits = 3)
+kable(adj_group_fits, digits = 3, caption = "Companion group-level hyperboloid fits for Adj-Amt.")
+kable(mcq_group_fits, digits = 3, caption = "Companion group-level logistic fits for MCQ.")
+```
 
-# Test for the amount effect using a binomial mixed-effects regression
-cat("\n--- MCQ: Amount Effect (Logistic Regression p-values) ---\n")
-mcq_amount_effect <- individual_level_data |>
-  filter(procedure == "mcq") |>
+### Magnitude-effect tests
+
+The published analyses used beta regression for Adj-Amt AuC and logistic regression for MCQ delayed-choice counts, with linear contrasts across amount. The following models preserve that outcome-specific approach and account for repeated observations with participant random intercepts.
+
+```{r amount-effects}
+adj_amount_effects <- adj_scores |>
+  mutate(amount = factor(amt, levels = 1:3)) |>
+  split(.$provider) |>
+  imap_dfr(function(data, sample_name) {
+    model <- glmmTMB(
+      auc ~ amount + (1 | id),
+      family = beta_family(),
+      data = data
+    )
+    test <- contrast(emmeans(model, ~ amount), method = "poly") |>
+      as.data.frame()
+    tibble(
+      provider = sample_name,
+      linear_trend = test$estimate[1],
+      p_value = test$p.value[1]
+    )
+  })
+
+mcq_amount_effects <- mcq_scores |>
+  mutate(amount = factor(amt, levels = 1:3)) |>
+  split(.$provider) |>
+  imap_dfr(function(data, sample_name) {
+    model <- glmmTMB(
+      cbind(delayed_choices, 9 - delayed_choices) ~ amount + (1 | id),
+      family = binomial(),
+      data = data
+    )
+    test <- contrast(emmeans(model, ~ amount), method = "poly") |>
+      as.data.frame()
+    tibble(
+      provider = sample_name,
+      linear_trend = test$estimate[1],
+      p_value = test$p.value[1]
+    )
+  })
+
+kable(adj_amount_effects, digits = 4, caption = "Adj-Amt magnitude-effect tests.")
+kable(mcq_amount_effects, digits = 4, caption = "MCQ magnitude-effect tests.")
+```
+
+The article reported a significant magnitude effect in every procedure-by-sample analysis (all *p*s < .001).
+
+## 3. Reliability within each procedure
+
+The article treated scores at different reward amounts as alternative forms. Large positive correlations across amounts therefore indicate that the procedures preserve individual differences across changes in reward magnitude.
+
+```{r reliability}
+amount_correlations <- function(data, measure) {
+  data |>
+    select(id, provider, amt, {{ measure }}) |>
+    pivot_wider(names_from = amt, values_from = {{ measure }}, names_prefix = "amount_") |>
+    group_by(provider) |>
+    summarise(
+      `small-medium` = cor(amount_1, amount_2, use = "complete.obs"),
+      `small-large` = cor(amount_1, amount_3, use = "complete.obs"),
+      `medium-large` = cor(amount_2, amount_3, use = "complete.obs"),
+      .groups = "drop"
+    )
+}
+
+adj_auc_reliability <- amount_correlations(adj_scores, auc) |>
+  mutate(procedure = "Adj-Amt", measure = "AuC")
+adj_logk_reliability <- amount_correlations(adj_scores, log_k_companion) |>
+  mutate(procedure = "Adj-Amt", measure = "Companion log k")
+mcq_prop_reliability <- amount_correlations(mcq_scores, delayed_choice_prop) |>
+  mutate(procedure = "MCQ", measure = "Delayed-choice proportion")
+mcq_logk_reliability <- amount_correlations(mcq_scores, log_k_companion) |>
+  mutate(procedure = "MCQ", measure = "Companion log k")
+
+companion_reliability <- bind_rows(
+  adj_auc_reliability,
+  adj_logk_reliability,
+  mcq_prop_reliability,
+  mcq_logk_reliability
+) |>
+  select(procedure, measure, provider, everything())
+
+kable(companion_reliability, digits = 3, caption = "Companion alternate-forms correlations.")
+```
+
+```{r measure-convergence}
+measure_convergence <- bind_rows(
+  adj_scores |>
+    group_by(provider, amt) |>
+    summarise(r = cor(auc, log_k_companion), .groups = "drop") |>
+    mutate(procedure = "Adj-Amt"),
+  mcq_scores |>
+    group_by(provider, amt) |>
+    summarise(r = cor(delayed_choice_prop, log_k_companion), .groups = "drop") |>
+    mutate(procedure = "MCQ")
+) |>
+  mutate(amount = case_when(
+    procedure == "Adj-Amt" & amt == 1 ~ "$30",
+    procedure == "Adj-Amt" & amt == 2 ~ "$80",
+    procedure == "Adj-Amt" & amt == 3 ~ "$500",
+    procedure == "MCQ" & amt == 1 ~ "$25-$35",
+    procedure == "MCQ" & amt == 2 ~ "$50-$60",
+    TRUE ~ "$75-$85"
+  )) |>
+  select(procedure, provider, amount, r)
+
+kable(measure_convergence, digits = 3,
+  caption = "Correlations between atheoretical measures and companion log k estimates.")
+```
+
+The published within-procedure correlations were uniformly significant and ranged from .737 to .925 across amounts. Correlations between atheoretical and theoretical measures were strongly negative, as expected from their opposite scoring directions.
+
+## 4. Convergent validity between procedures
+
+Only two amount conditions were comparable across procedures: Adj-Amt $30 with MCQ $25-$35, and Adj-Amt $80 with MCQ $75-$85.
+
+### Published between-procedure correlations (Table 3)
+
+| Sample | Common amount | `log k` | AuC with delayed-choice proportion |
+|---|---:|---:|---:|
+| Prolific | $30 | .768 | .809 |
+| Prolific | $80 | .788 | .821 |
+| MTurk | $30 | .741 | .790 |
+| MTurk | $80 | .770 | .820 |
+
+```{r between-procedure}
+adj_common <- adj_scores |>
+  filter(amt %in% c(1, 2)) |>
+  mutate(amount = if_else(amt == 1, "$30", "$80")) |>
+  transmute(id, provider, amount, auc, adj_log_k = log_k_companion)
+
+mcq_common <- mcq_scores |>
+  filter(amt %in% c(1, 3)) |>
+  mutate(amount = if_else(amt == 1, "$30", "$80")) |>
+  transmute(
+    id, provider, amount,
+    delayed_choice_prop,
+    mcq_log_k = log_k_companion
+  )
+
+common_scores <- inner_join(
+  adj_common,
+  mcq_common,
+  by = c("id", "provider", "amount")
+)
+
+companion_between <- common_scores |>
+  group_by(provider, amount) |>
+  summarise(
+    companion_atheoretical_r = cor(auc, delayed_choice_prop),
+    companion_log_k_r = cor(adj_log_k, mcq_log_k),
+    .groups = "drop"
+  )
+
+published_between <- tribble(
+  ~provider, ~amount, ~published_atheoretical_r, ~published_log_k_r,
+  "Prolific", "$30", .809, .768,
+  "Prolific", "$80", .821, .788,
+  "MTurk", "$30", .790, .741,
+  "MTurk", "$80", .820, .770
+)
+
+between_comparison <- left_join(
+  published_between,
+  companion_between,
+  by = c("provider", "amount")
+)
+
+kable(between_comparison, digits = 3,
+  caption = "Published benchmarks and companion between-procedure correlations.")
+```
+
+The atheoretical results reproduce the published values because they are calculated directly from the same observed responses. Small differences in the theoretical correlations are expected because the companion Adj-Amt estimates use nonlinear least squares rather than the publication's Stan model.
+
+## 5. Absolute differences: convergence is not equivalence
+
+The publication compared `log k` values with a 2 (sample) x 2 (amount) x 2 (procedure) factorial ANOVA. The companion model below uses the transparent nonlinear-least-squares estimates; the published ANOVA remains the inferential reference.
+
+```{r factorial-anova}
+companion_anova_data <- bind_rows(
+  adj_scores |>
+    filter(amt %in% c(1, 2)) |>
+    transmute(
+      id, provider,
+      amount = factor(if_else(amt == 1, "$30", "$80")),
+      procedure = factor("Adj-Amt"),
+      log_k = log_k_companion
+    ),
+  mcq_scores |>
+    filter(amt %in% c(1, 3)) |>
+    transmute(
+      id, provider,
+      amount = factor(if_else(amt == 1, "$30", "$80")),
+      procedure = factor("MCQ"),
+      log_k = log_k_companion
+    )
+)
+
+companion_anova <- aov(
+  log_k ~ provider * amount * procedure,
+  data = companion_anova_data
+)
+
+summary(companion_anova)
+
+companion_post_hoc <- emmeans(companion_anova, ~ procedure | amount) |>
+  pairs(adjust = "tukey") |>
+  as.data.frame()
+
+kable(companion_post_hoc, digits = 3,
+  caption = "Companion procedure contrasts within amount.")
+```
+
+### Published inferential results
+
+| Effect | *F*(1, 1564) | *p* |
+|---|---:|---:|
+| Amount | 38.48 | < .001 |
+| Procedure | 4.42 | .04 |
+| Sample | 130.80 | < .001 |
+| Procedure x Amount | 8.20 | .004 |
+
+No other interactions were significant (all *p*s > .26). The Procedure x Amount interaction showed that the MCQ produced steeper discounting than Adj-Amt at $30 (*p* = .003), whereas the procedures did not differ at $80 (*p* = .95).
+
+## 6. Recruitment-source differences and data quality
+
+```{r distribution-summary}
+participant_distributions <- full_join(
+  adj_scores |>
+    group_by(id, provider) |>
+    summarise(mean_auc = mean(auc), .groups = "drop"),
+  mcq_scores |>
+    group_by(id, provider) |>
+    summarise(total_delayed_choices = sum(delayed_choices), .groups = "drop"),
+  by = c("id", "provider")
+)
+
+extreme_discounting <- participant_distributions |>
   group_by(provider) |>
   summarise(
-    # Fit a binomial (logistic) regression because the outcome is a count of choices
-    p_value = summary(glht(
-      glmmTMB(cbind(atheoretical, 9 - atheoretical) ~ as.factor(amt) + (1 | id), 
-              family = binomial, data = cur_data()),
-      linfct = matrix(c(contr.poly(3)[,1]), nrow = 1) # Contrast for a linear trend
-    ))$test$pvalues[1],
-    .groups = 'drop'
+    n = n(),
+    `AuC < .125, n` = sum(mean_auc < .125),
+    `AuC < .125, %` = 100 * mean(mean_auc < .125),
+    `MCQ delayed choices <= 3, n` = sum(total_delayed_choices <= 3),
+    `MCQ delayed choices <= 3, %` = 100 * mean(total_delayed_choices <= 3),
+    `MCQ delayed choices = 0, n` = sum(total_delayed_choices == 0),
+    `MCQ delayed choices = 0, %` = 100 * mean(total_delayed_choices == 0),
+    .groups = "drop"
   )
-  
-print(mcq_amount_effect)
+
+kable(extreme_discounting, digits = 1,
+  caption = "Extreme-discounting patterns by recruitment platform.")
 ```
 
----
+No Prolific participant failed an attention check, whereas 32 of 275 MTurk recruits did. Even after those exclusions, the MTurk sample contained substantially more extremely steep discounters. These differences cannot be attributed causally to recruitment platform because the samples also differed in age, education, and ethnicity.
 
-### 2.2 Reliability and Internal Consistency
+| Sample | Mean AuC < .125 | MCQ delayed choices <= 3 | No delayed MCQ choices |
+|---|---:|---:|---:|
+| Prolific | 1 (0.7%) | 7 (4.7%) | 0 (0.0%) |
+| MTurk | 53 (21.8%) | 58 (23.9%) | 34 (14.0%) |
 
-These analyses evaluate the psychometric properties of the discounting measures, corresponding to **Tables 1 and 2** in the paper. We assess two key aspects of reliability:
+Counts and percentages in this table are recomputed from the analysis-ready dataset and reproduce the distributional statements in the article.
 
-1.  **Alternate-Forms Reliability**: We test whether individuals' discounting behavior is consistent across different reward amounts within the same procedure. High positive correlations (e.g., between a participant's score for a $30 reward and their score for an $80 reward) indicate that the measure is internally consistent.
-2.  **Convergent Validity of Measures**: We test whether the atheoretical (e.g., AuC) and theoretical (e.g., `log k`) scoring methods capture the same information. High (negative) correlations between these two measures confirm that they are assessing the same underlying construct.
+## 7. Interpretation and research guidance
 
-```{r reliability_analysis}
-# --- 2.2.1 Alternate-Forms Reliability (Within-Procedure) ---
+| Research priority | Stronger practical fit | Reason |
+|---|---|---|
+| Brief online assessment | MCQ | Twenty-seven fixed items and established scoring |
+| Rewards above $85 | Adj-Amt | Flexible delayed amounts |
+| Individual discounting functions | Adj-Amt | Direct subjective-value estimates across delays |
+| Probability, loss, or nonmonetary extensions | Adj-Amt or a separately validated questionnaire | The standard MCQ is specific to small delayed monetary gains |
+| Comparing absolute `log k` values across studies | Neither without calibration | Procedure and amount can shift the level of `log k` |
 
-# These analyses test whether each measure (atheoretical and theoretical) is
-# internally consistent across different reward amounts.
+### Conclusions
 
-cat("--- Adj-Amt: Within-Measure Correlations ---\n")
-# Filter for Adj-Amt data, pivot to wide format, and calculate correlations
-adj_amt_reliability <- individual_level_data |>
-  filter(procedure == "aa") |>
-  select(id, provider, amt, atheoretical, theoretical) |>
-  pivot_wider(names_from = amt, values_from = c(atheoretical, theoretical)) |>
-  group_by(provider) |>
-  summarise(
-    # Atheoretical (AuC) correlations
-    AuC = list(cor(select(cur_data(), starts_with("atheoretical")), use = "complete.obs")),
-    # Theoretical (log k) correlations
-    LogK = list(cor(select(cur_data(), starts_with("theoretical")), use = "complete.obs"))
-  )
-# Print the correlation matrices for each provider
-print(adj_amt_reliability$AuC, digits = 3)
-print(adj_amt_reliability$LogK, digits = 3)
+- Adj-Amt and MCQ show strong convergent validity across two online samples.
+- The finding is robust to theoretical and atheoretical scoring approaches.
+- The procedures are not automatically interchangeable at the level of absolute `log k`.
+- Recruitment source and attention-check performance are part of the measurement context, not merely administrative details.
+- Procedure choice should follow the scientific question, outcome domain, reward range, and required level of measurement detail.
 
+### Scope and limitations
 
-cat("\n\n--- MCQ: Within-Measure Correlations ---\n")
-# Filter for MCQ data, pivot to wide format, and calculate correlations
-mcq_reliability <- individual_level_data |>
-  filter(procedure == "mcq") |>
-  select(id, provider, amt, atheoretical, theoretical) |>
-  pivot_wider(names_from = amt, values_from = c(atheoretical, theoretical)) |>
-  group_by(provider) |>
-  summarise(
-    # Atheoretical (Choice Count) correlations
-    ChoiceCount = list(cor(select(cur_data(), starts_with("atheoretical")), use = "complete.obs")),
-    # Theoretical (log k) correlations
-    LogK = list(cor(select(cur_data(), starts_with("theoretical")), use = "complete.obs"))
-  )
-# Print the correlation matrices for each provider
-print(mcq_reliability$ChoiceCount, digits = 3)
-print(mcq_reliability$LogK, digits = 3)
+The evidence concerns delayed monetary gains in two United States online samples. It does not establish equivalence for delayed losses, probabilistic outcomes, combined delay-and-probability outcomes, nonmonetary rewards, or other populations. Correlations establish shared variance, not causal validity or score identity.
 
-# --- 2.2.2 Convergent Validity of Measures (Between-Measure) ---
+## References
 
-# This analysis tests if the atheoretical and theoretical scoring methods are highly
-# correlated, which would confirm they measure the same construct.
-# The correlation should be strongly negative, as a lower AuC (more discounting)
-# corresponds to a higher log k (more discounting).
+Du, W., Green, L., & Myerson, J. (2002). Cross-cultural comparisons of discounting delayed and probabilistic rewards. *The Psychological Record, 52*, 479-492. <https://doi.org/10.1007/BF03395199>
 
-cat("\n\n--- Correlation Between Atheoretical and Theoretical Measures ---\n")
-measure_convergence <- individual_level_data |>
-  group_by(provider, procedure, amt) |>
-  summarise(
-    correlation = cor(atheoretical, theoretical, use = "complete.obs"), 
-    .groups = 'drop'
-  ) |>
-  pivot_wider(names_from = amt, values_from = correlation, names_prefix = "amt_")
+Kirby, K. N., Petry, N. M., & Bickel, W. K. (1999). Heroin addicts have higher discount rates for delayed rewards than non-drug-using controls. *Journal of Experimental Psychology: General, 128*, 78-87. <https://doi.org/10.1037/0096-3445.128.1.78>
 
-print(measure_convergence)
-```
+Myerson, J., Green, L., & Warusawitharana, M. (2001). Area under the curve as a measure of discounting. *Journal of the Experimental Analysis of Behavior, 76*, 235-243. <https://doi.org/10.1901/jeab.2001.76-235>
 
----
-
-### 2.3 Convergent Validity: Comparing the Two Procedures
-
-This final analysis addresses the primary research question: **do the Adjusting-Amount and MCQ procedures measure the same underlying construct?** To test this, we assess their convergent validity by correlating the discounting measures derived from each procedure.
-
-If both procedures are indeed measuring the same trait (e.g., "impulsivity" or "financial patience"), then an individual's score on the Adj-Amt procedure should be highly correlated with their score on the MCQ. This analysis corresponds to **Table 3** in the paper.
-
-```{r validity_analysis}
-# --- 2.3 Convergent Validity: Between-Procedure Correlations ---
-
-# This analysis correlates the measures from the Adj-Amt procedure with those
-# from the MCQ to test if they measure the same underlying construct.
-
-# First, prepare a wide-format dataframe where each row is a participant,
-# and columns represent the measures from both procedures for the common amounts ($30, $80).
-wide_format_for_correlation <- individual_level_data |>
-  # Isolate the two common reward amounts from each procedure
-  filter((procedure == "aa" & amt %in% c(1, 2)) | (procedure == "mcq" & amt %in% c(1, 3))) |>
-  # Create a consistent amount label for joining
-  mutate(amount_label = ifelse(amt == 1, "$30", "$80")) |>
-  select(-amt) |> 
-  pivot_wider(
-    names_from = procedure, 
-    values_from = c(atheoretical, theoretical)
-  )
-
-# Now, calculate the correlations for each sample and amount combination.
-cat("--- Between-Procedure Correlations (Atheoretical Measures) ---\n")
-atheoretical_correlations <- wide_format_for_correlation |>
-  group_by(provider, amount_label) |> 
-  summarise(
-    correlation = cor(atheoretical_aa, atheoretical_mcq, use = "complete.obs"),
-    .groups = 'drop'
-  ) |>
-  pivot_wider(names_from = provider, values_from = correlation)
-
-print(atheoretical_correlations)
-
-cat("\n--- Between-Procedure Correlations (Theoretical Measures) ---\n")
-theoretical_correlations <- wide_format_for_correlation |>
-  group_by(provider, amount_label) |> 
-  summarise(
-    # Note: Correlation between log(k) values should be positive
-    correlation = cor(theoretical_aa, theoretical_mcq, use = "complete.obs"),
-    .groups = 'drop'
-  ) |>
-  pivot_wider(names_from = provider, values_from = correlation)
-
-print(theoretical_correlations)
-```
-
----
-
-### 3. Comparing Systematic Differences in Discounting
-
-While the correlation analyses confirm that the two procedures measure the same construct, a crucial practical question remains: **are the measures interchangeable?** That is, do the two procedures and two online samples produce systematically different absolute values of discounting?
-
-To answer this, we replicate the final analysis from the paper, a mixed-effects ANOVA. This model examines the main effects and interactions of **experimental procedure** (Adj-Amt vs. MCQ), **participant sample** (Prolific vs. MTurk), and **reward amount** on the estimated `log k` values. Post-hoc tests are then used to explore the significant interaction found in the paper, pinpointing exactly where the differences lie.
-
-```{r anova_analysis}
-# --- 3.1 Mixed-Effects ANOVA on Theoretical (log k) Measures ---
-
-# This analysis uses a linear mixed-effects model to replicate the ANOVA from
-# the paper. A mixed-effects model is appropriate because each participant
-# provides multiple data points (i.e., repeated measures). This model accounts
-# for that non-independence by including a random intercept for each participant.
-
-# Prepare the data for the model, filtering for the common reward amounts
-anova_df <- individual_level_data |>
-  filter((procedure == "aa" & amt %in% c(1, 2)) | (procedure == "mcq" & amt %in% c(1, 3))) |>
-  mutate(
-    amt = factor(ifelse(amt %in% c(1), "$30", "$80")),
-    procedure = factor(procedure),
-    provider = factor(provider),
-    id = factor(id)
-  )
-
-# Fit the linear mixed-effects model
-logk_mixed_model <- lmer(theoretical ~ provider * amt * procedure + (1 | id), data = anova_df)
-
-# Print the ANOVA table with Type III sums of squares
-cat("--- Mixed-Effects ANOVA: Comparing log k Values ---\n")
-print(anova(logk_mixed_model))
-
-# --- 3.2 Post-Hoc Contrasts ---
-
-# The ANOVA revealed a significant interaction between procedure and amount.
-# We use post-hoc tests to compare the log k values from the two procedures
-# at each reward amount to understand this interaction.
-
-cat("\n\n--- Post-Hoc Contrasts for Procedure x Amount Interaction ---\n")
-# Create an emmeans object from the fitted model
-emm_obj <- emmeans(logk_mixed_model, ~ procedure | amt)
-# Perform pairwise comparisons between procedures for each amount
-print(pairs(emm_obj, adjust = "holm"))
-```
+Wan, H., Myerson, J., & Green, L. (2023). Individual differences in degree of discounting: Do different procedures and measures assess the same construct? *Behavioural Processes, 208*, 104864. <https://doi.org/10.1016/j.beproc.2023.104864>

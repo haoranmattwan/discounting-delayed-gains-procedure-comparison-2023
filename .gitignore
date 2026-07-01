@@ -14,4 +14,26 @@ renv/staging/
 
 # OS / Editor specific
 .DS_Store
+._*
 .vscode/
+
+# Generated Quarto and notebook caches
+/.quarto/
+**/.quarto/
+**/*_cache/
+
+# Participant-level and analysis data (available from the authors on request)
+/Analysis/AdjAmt_MCQ.csv
+/R Code/Data/*.csv
+/R Code/Data/*.xls
+/R Code/Data/*.xlsx
+
+# Local drafting and administrative records
+/Manuscript/
+/Wan et al., 2023.pdf
+/Presentation/SQAB/previous/
+/Presentation/SQAB/receipts.pdf
+/Presentation/SQAB/*Expense*
+/Presentation/SQAB/*travel fund*
+/Presentation/SQAB/*REC_*
+/Presentation/SQAB/Nevin award.doc
